@@ -15,8 +15,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
     QComboBox,
-    QListWidget,
-    QListWidgetItem,
+    QPlainTextEdit,
     QSpinBox,
     QCheckBox,
     QProgressBar
@@ -60,7 +59,7 @@ class MainWindow(QWidget):
             # RIGHT
             right = QVBoxLayout()
             right.addWidget(QLabel("screenURL_List"))
-            self.url_list = QListWidget()
+            self.url_list = QPlainTextEdit()
             right.addWidget(self.url_list)
             self.api_url = QLineEdit()
             right.addWidget(QLabel("APIBaseURL"))
@@ -114,6 +113,30 @@ class MainWindow(QWidget):
 
             right.addLayout(output_layout)
             
+            self.api_url.textChanged.connect(
+                self.refresh_json_text
+            )
+
+            self.socket_url.textChanged.connect(
+                self.refresh_json_text
+            )
+            
+            self.scene_index.valueChanged.connect(
+                self.refresh_json_text
+            )
+
+            self.reset_hour.valueChanged.connect(
+                self.refresh_json_text
+            )
+
+            self.reset_minute.valueChanged.connect(
+                self.refresh_json_text
+            )
+            
+            self.auto_reset.stateChanged.connect(
+                self.refresh_json_text
+            )
+            
         def select_root(self):
             folder = QFileDialog.getExistingDirectory(
             self,
@@ -136,16 +159,16 @@ class MainWindow(QWidget):
                 auto_reset = data.get("AutoReset", False)
                 reset_hour = data.get("AutoResetHour", 2)
                 reset_minute = data.get("AutoResetMinute", 0)
-                self.url_list.clear()
-                for url in screen_urls:
-                    QListWidgetItem(url, self.url_list)
-                    self.api_url.setText(api)
-                    self.socket_url.setText(socket)
-                    self.scene_index.setValue(auto_scene)
-                    self.auto_reset.setChecked(auto_reset)
-                    self.reset_hour.setValue(reset_hour)
-                    self.reset_minute.setValue(reset_minute)
-                    self.validate_btn.setText("Valid JSON")
+                self.url_list.setPlainText(
+                    "\n".join(screen_urls)
+                )
+                self.api_url.setText(api)
+                self.socket_url.setText(socket)
+                self.scene_index.setValue(auto_scene)
+                self.auto_reset.setChecked(auto_reset)
+                self.reset_hour.setValue(reset_hour)
+                self.reset_minute.setValue(reset_minute)
+                self.validate_btn.setText("Valid JSON")
             except Exception as e:
                 self.validate_btn.setText("Invalid JSON")
                 
@@ -159,7 +182,9 @@ class MainWindow(QWidget):
                 )
                 return
 
-            project_name = self.project_name.text().strip()
+            project_name = (
+                self.project_name.text().strip()
+            )
 
             if not project_name:
                 QMessageBox.warning(
@@ -186,7 +211,9 @@ class MainWindow(QWidget):
 
             self.builder.write_config(config)
             
-            temp_iss = self.builder.modify_iss(project_name)
+            temp_iss = self.builder.modify_iss(
+                self.project_name.text().strip()
+            )
 
             self.progress_bar.setValue(10)
 
@@ -210,7 +237,15 @@ class MainWindow(QWidget):
                 lambda: self.build_finished(project_name)
             )
 
-            bat_path = str(self.builder.bat_path)
+            Storage.save_project(
+                project_name,
+                {
+                    "project_name": project_name,
+                    "root_path": self.root_path,
+                    "config": config,
+                }
+            )
+            self.load_projects()
 
             self.process.start(
                 r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
@@ -248,10 +283,6 @@ class MainWindow(QWidget):
                     "Error",
                     "Failed to locate setup output"
                 )
-
-            if self.temp_iss.exists():
-                 self.temp_iss.unlink()
-                 
             self.build_btn.setEnabled(True)
             
         def handle_stderr(self):
@@ -283,9 +314,11 @@ class MainWindow(QWidget):
             self.project_dropdown.blockSignals(True)
             self.project_dropdown.clear()
             self.project_dropdown.addItem("")
-            for name in projects.keys():
-                self.project_dropdown.addItem(name)
-                self.project_dropdown.blockSignals(False)
+            self.project_dropdown.addItems(
+                sorted(set(projects.keys()))
+            )
+            self.project_dropdown.blockSignals(False)
+            
         def on_project_selected(self, name):
             
             if not name:
@@ -296,7 +329,10 @@ class MainWindow(QWidget):
             data = projects[name]
             self.project_name.setText(data.get("project_name", ""))
             self.root_path = data.get("root_path", "")
-            json_text = data.get("json", "")
+            json_text = json.dumps(
+                data.get("config", {}),
+                indent=4
+            )
             self.json_text.blockSignals(True)
             self.json_text.setText(json_text)
             self.json_text.blockSignals(False)
@@ -319,3 +355,31 @@ class MainWindow(QWidget):
                     "/select,",
                     normalized
                 ])
+        def refresh_json_text(self):
+            config = self.collect_current_config()
+            self.json_text.blockSignals(True)
+            self.json_text.setText(
+                json.dumps(config, indent=4)
+            )
+            self.json_text.blockSignals(False)
+        
+        def collect_current_config(self):
+            return {
+                 "screenURL_List": [
+                    line.strip()
+                    for line in self.url_list
+                        .toPlainText()
+                        .splitlines()
+                    if line.strip()
+                ],
+                "APIBaseURL": self.api_url.text(),
+                "SocketBaseURL": self.socket_url.text(),
+                "AutoLoadSceneIndex":
+                    self.scene_index.value(),
+                "AutoReset":
+                    self.auto_reset.isChecked(),
+                "AutoResetHour":
+                    self.reset_hour.value(),
+                "AutoResetMinute":
+                    self.reset_minute.value(),
+            }

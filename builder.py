@@ -93,20 +93,26 @@ class Builder:
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=4)
 
-    def modify_iss(self):
+    def modify_iss(self, custom_project_name):
 
         info = self.get_project_info()
 
-        project_name = (
+        base_project_name = (
             info["project_name"]
             .replace(" ", "_")
         )
 
         version = info["version"]
 
+        custom_project_name = (
+            custom_project_name
+            .replace(" ", "_")
+        )
+
         output_name = (
-            f"{project_name}"
-            f"_prod_Setup_"
+            f"{base_project_name}_"
+            f"{custom_project_name}_"
+            f"prod_Setup_"
             f"{version}"
         )
 
