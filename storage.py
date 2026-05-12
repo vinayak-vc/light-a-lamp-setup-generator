@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 
-APP_DIR = Path(os.getenv("APPDATA")) / "InstallerBuilder"
+APP_DIR = Path(os.getenv("APPDATA")) / "LightAlampInstallerBuilder"
 APP_DIR.mkdir(parents=True, exist_ok=True)
 
 PROJECTS_FILE = APP_DIR / "projects.json"

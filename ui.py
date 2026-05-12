@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 import os
 import subprocess
@@ -30,10 +31,19 @@ class MainWindow(QWidget):
             self.current_json = {}
             self.setWindowTitle("Installer Builder")
             self.resize(1200, 700)
+            self.root_path = (
+                self.get_default_root_path()
+            )
             self.setup_ui()
             self.load_projects()
         def setup_ui(self):
             root = QHBoxLayout(self)
+            
+            self.logs = QTextEdit()
+            self.logs.setReadOnly(True)
+
+            self.root_label = QLabel()
+            
             # LEFT
             left = QVBoxLayout()
             self.project_dropdown = QComboBox()
@@ -48,6 +58,7 @@ class MainWindow(QWidget):
             left.addWidget(self.project_name)
             path_btn = QPushButton("Select Root Folder")
             path_btn.clicked.connect(self.select_root)
+            left.addWidget(self.root_label)
             left.addWidget(path_btn)
             self.json_text = QTextEdit()
             self.json_text.textChanged.connect(self.validate_json)
@@ -96,6 +107,7 @@ class MainWindow(QWidget):
             self.progress_bar.setValue(0)
 
             right.addWidget(self.progress_bar)
+            right.addWidget(self.logs)
 
             # Output Path
             output_layout = QHBoxLayout()
@@ -137,6 +149,10 @@ class MainWindow(QWidget):
                 self.refresh_json_text
             )
             
+            self.root_label.setText(
+                self.root_path
+            )
+            
         def select_root(self):
             folder = QFileDialog.getExistingDirectory(
             self,
@@ -174,140 +190,183 @@ class MainWindow(QWidget):
                 
         def build_project(self):
 
-            if not self.root_path:
-                QMessageBox.warning(
-                    self,
-                    "Error",
-                    "Select root folder first"
+            try:
+
+                project_name = (
+                    self.project_name.text().strip()
                 )
-                return
 
-            project_name = (
-                self.project_name.text().strip()
-            )
+                if not project_name:
 
-            if not project_name:
-                QMessageBox.warning(
-                    self,
-                    "Error",
-                    "Project name required"
-                )
-                return
+                    QMessageBox.warning(
+                        self,
+                        "Error",
+                        "Project name required"
+                    )
 
-            config = {
-                "screenURL_List": [
-                    self.url_list.item(i).text()
-                    for i in range(self.url_list.count())
-                ],
-                "APIBaseURL": self.api_url.text(),
-                "SocketBaseURL": self.socket_url.text(),
-                "AutoLoadSceneIndex": self.scene_index.value(),
-                "AutoReset": self.auto_reset.isChecked(),
-                "AutoResetHour": self.reset_hour.value(),
-                "AutoResetMinute": self.reset_minute.value(),
-            }
+                    return
 
-            self.builder = Builder(self.root_path)
-
-            self.builder.write_config(config)
-            
-            temp_iss = self.builder.modify_iss(
-                self.project_name.text().strip()
-            )
-
-            self.progress_bar.setValue(10)
-
-            self.build_btn.setEnabled(False)
-
-            self.process = QProcess(self)
-
-            self.process.setWorkingDirectory(
-                str(self.root_path)
-            )
-
-            self.process.readyReadStandardOutput.connect(
-                self.handle_stdout
-            )
-
-            self.process.readyReadStandardError.connect(
-                self.handle_stderr
-            )
-
-            self.process.finished.connect(
-                lambda: self.build_finished(project_name)
-            )
-
-            Storage.save_project(
+                config = self.collect_current_config()
+                
+                Storage.save_project(
                 project_name,
-                {
-                    "project_name": project_name,
-                    "root_path": self.root_path,
-                    "config": config,
-                }
-            )
-            self.load_projects()
+                    {
+                        "project_name": project_name,
+                        "root_path": str(
+                            self.root_path
+                        ),
+                        "config": config
+                    }
+                )
 
-            self.process.start(
-                r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-                [str(temp_iss)]
-            )
+                self.load_projects()
+
+                self.builder = Builder(
+                    self.root_path
+                )
+
+                # Write config.json
+                self.builder.write_config(config)
+
+                # Create temp iss
+                temp_iss = self.builder.modify_iss(
+                    project_name
+                )
+
+                self.log(f"Temp ISS: {temp_iss}")
+
+                self.process = QProcess(self)
+
+                self.process.readyReadStandardOutput.connect(
+                    self.handle_stdout
+                )
+
+                self.process.readyReadStandardError.connect(
+                    self.handle_stderr
+                )
+
+                self.process.finished.connect(
+                    lambda: self.build_finished(
+                        project_name,
+                        temp_iss
+                    )
+                )
+
+                self.process.errorOccurred.connect(
+                    self.process_error
+                )
+
+                # IMPORTANT
+                iscc_path = (
+                    r"C:\Program Files (x86)"
+                    r"\Inno Setup 6\ISCC.exe"
+                )
+
+                self.log(f"Using ISCC: {iscc_path}")
+
+                self.process.start(
+                    iscc_path,
+                    [str(temp_iss)]
+                )
+
+                started = self.process.waitForStarted()
+
+                if not started:
+
+                    self.log(
+                        "FAILED TO START PROCESS"
+                    )
+
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        "Failed to start ISCC.exe"
+                    )
+
+                    return
+
+                self.progress_bar.setValue(20)
+
+                self.build_btn.setEnabled(False)
+
+            except Exception as e:
+
+                QMessageBox.critical(
+                    self,
+                    "Exception",
+                    str(e)
+                )
+
+                print(e)
             
-        def build_finished(self, project_name):
+        def build_finished(
+            self,
+            project_name,
+            temp_iss
+        ):
 
-            self.progress_bar.setValue(90)
+            self.progress_bar.setValue(95)
 
-            output_path = self.builder.finalize_build(
-                project_name
+            output_path = (
+                self.builder.finalize_build(
+                    project_name
+                )
             )
-            print(output_path)  
+
             if output_path:
 
                 self.output_path.setText(
-                    os.path.normpath(output_path)
+                    output_path
                 )
-
-                self.output_path.repaint()
 
                 self.progress_bar.setValue(100)
 
-                QMessageBox.information(
-                    self,
-                    "Success",
-                    "Build completed successfully"
+                self.log(
+                    f"Build Success:\n{output_path}"
                 )
 
             else:
 
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    "Failed to locate setup output"
+                self.log(
+                    "FAILED TO LOCATE OUTPUT"
                 )
-            self.build_btn.setEnabled(True)
+
+            if Path(temp_iss).exists():
+
+                Path(temp_iss).unlink()
+
+            self.build_btn.setEnabled(True)       
             
         def handle_stderr(self):
 
             data = self.process.readAllStandardError()
 
-            stderr = bytes(data).decode("utf-8", errors="ignore")
+            stderr = bytes(data).decode(
+                "utf-8",
+                errors="ignore"
+            )
 
-            print(stderr)
+            self.log(stderr)
             
         def handle_stdout(self):
 
             data = self.process.readAllStandardOutput()
 
-            stdout = bytes(data).decode("utf-8", errors="ignore")
+            stdout = bytes(data).decode(
+                "utf-8",
+                errors="ignore"
+            )
 
-            print(stdout)
+            self.log(stdout)
 
-            # optional live logs
+            if "Parsing [Setup]" in stdout:
+                self.progress_bar.setValue(30)
 
-            if "Compiling" in stdout:
-                self.progress_bar.setValue(40)
+            elif "Compressing" in stdout:
+                self.progress_bar.setValue(60)
 
-            if "Creating setup files" in stdout:
-                self.progress_bar.setValue(70)
+            elif "Successful compile" in stdout:
+                self.progress_bar.setValue(90)
         
         def load_projects(self):
             projects = Storage.load_projects()
@@ -383,3 +442,42 @@ class MainWindow(QWidget):
                 "AutoResetMinute":
                     self.reset_minute.value(),
             }
+            
+        def log(self, text):
+            self.logs.append(text)
+            print(text)
+            
+        def process_error(self, error):
+            self.log(
+                f"QProcess Error: {error}"
+            )
+            QMessageBox.critical(
+                self,
+                "Build Error",
+                str(error)
+            )
+        def get_default_root_path(self):
+            # EXE mode
+            if getattr(sys, "frozen", False):
+
+                base_path = Path(
+                    sys.executable
+                ).parent
+
+            # Python mode
+            else:
+                base_path = Path(
+                    __file__
+                ).resolve().parent
+
+            target_path = (
+                base_path / "target"
+            )
+            if not Path(target_path).exists():
+                QMessageBox.warning(
+                    self,
+                    "Target Missing",
+                    f"Could not find:\n\n"
+                    f"{target_path}"
+                )
+            return str(target_path)
