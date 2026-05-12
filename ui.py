@@ -27,7 +27,6 @@ class MainWindow(QWidget):
         def __init__(self):
             super().__init__()
             self.process = None
-            self.root_path = ""
             self.current_json = {}
             self.setWindowTitle("Installer Builder")
             self.resize(1200, 700)
@@ -160,6 +159,10 @@ class MainWindow(QWidget):
             )
             if folder:
               self.root_path = folder
+              
+            self.root_label.setText(
+                self.root_path
+            )
         def validate_json(self):
             text = self.json_text.toPlainText().strip()
             if not text:
@@ -387,7 +390,7 @@ class MainWindow(QWidget):
                return
             data = projects[name]
             self.project_name.setText(data.get("project_name", ""))
-            self.root_path = data.get("root_path", "")
+            #self.root_path = data.get("root_path", "")
             json_text = json.dumps(
                 data.get("config", {}),
                 indent=4
