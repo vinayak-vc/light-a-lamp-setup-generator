@@ -2,7 +2,7 @@
 ; InstallerBuilder Setup Script
 ; =========================================================
 
-#define AppName "Light A Lamp Installer Builder"
+#define AppName "Light a Lamp InstallerBuilder"
 #define AppVersion "1.0.0"
 #define ExeName "Light a Lamp InstallerBuilder.exe"
 
@@ -31,7 +31,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64
 
-SetupIconFile=InstallerBuilder.ico
+SetupIconFile=icon.ico
 
 UninstallDisplayIcon={app}\{#ExeName}
 
@@ -44,7 +44,7 @@ DisableProgramGroupPage=yes
 [Files]
 
 ; Main EXE
-Source: "InstallerBuilder.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Entire target folder
 Source: "target\*"; DestDir: "{app}\target"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -65,9 +65,7 @@ Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#ExeName}"
 
 [Run]
 
-Filename: "{app}\{#ExeName}";
-Description: "Launch {#AppName}";
-Flags: nowait postinstall skipifsilent runascurrentuser
+Filename: "{app}\{#ExeName}";Description: "Launch {#AppName}";Flags: nowait postinstall skipifsilent runascurrentuser
 
 ; =========================================================
 ; UNINSTALL CLEANUP
