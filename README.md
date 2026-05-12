@@ -1,0 +1,1 @@
+# light-a-lamp-setup-generator
